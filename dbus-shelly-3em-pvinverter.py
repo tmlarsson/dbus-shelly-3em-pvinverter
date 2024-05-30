@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import platform
 import logging
 import sys
