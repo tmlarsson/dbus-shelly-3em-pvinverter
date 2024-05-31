@@ -44,7 +44,6 @@ class DbusShelly3emService:
         self._dbusservice.add_path('/Position', int(config['DEFAULT']['Position']))
         self._dbusservice.add_path('/Serial', self._getShellySerial())
         self._dbusservice.add_path('/UpdateIndex', 0)
-        self._dbusservice.add_path('/StatusCode', 0)  # Dummy path so VRM detects us as a PV-inverter.
 
         # Add path values to dbus
         for path, settings in self._paths.items():
@@ -134,6 +133,7 @@ class DbusShelly3emService:
 
             # Send data to DBus
             for i, phase in enumerate(['L1', 'L2', 'L3']):
+                logging.info("Phase %s" % (phase))
                 pre = '/Ac/' + phase
                 emeter = meter_data['emeters'][i]
 
@@ -145,15 +145,11 @@ class DbusShelly3emService:
                 self._dbusservice[pre + '/Voltage'] = voltage
                 self._dbusservice[pre + '/Current'] = current
                 self._dbusservice[pre + '/Power'] = power
-                self._dbusservice[pre + '/Energy/Forward'] = total / 1000 / 60
+                self._dbusservice[pre + '/Energy/Forward'] = total / 1000
 
             self._dbusservice['/Ac/Power'] = meter_data['total_power']
-            self._dbusservice['/Ac/Energy/Forward'] = sum(emeter['total'] for emeter in meter_data['emeters']) / 1000 / 60
-
-            # Logging
-            logging.debug("House Consumption (/Ac/Power): %s" % (self._dbusservice['/Ac/Power']))
-            logging.debug("House Forward (/Ac/Energy/Forward): %s" % (self._dbusservice['/Ac/Energy/Forward']))
-            logging.debug("---")
+            self._dbusservice['/Ac/Energy/Forward'] = sum(emeter['total'] for emeter in meter_data['emeters']) / 1000
+            
 
             # Increment UpdateIndex - to show that new data is available
             index = self._dbusservice['/UpdateIndex'] + 1  # increment index
@@ -202,9 +198,7 @@ def main():
             servicename='com.victronenergy.pvinverter',
             paths={
                 '/Ac/Energy/Forward': {'initial': None, 'textformat': _kwh},  # energy produced by pv inverter
-                '/Ac/Power': {'initial': 0, 'textformat': _w},
-                '/Ac/Current': {'initial': 0, 'textformat': _a},
-                '/Ac/Voltage': {'initial': 0, 'textformat': _v},
+                '/Ac/Power': {'initial': 0, 'textformat': _w},  # power produced by pv inverter
                 '/Ac/L1/Voltage': {'initial': 0, 'textformat': _v},
                 '/Ac/L2/Voltage': {'initial': 0, 'textformat': _v},
                 '/Ac/L3/Voltage': {'initial': 0, 'textformat': _v},
