@@ -133,7 +133,6 @@ class DbusShelly3emService:
 
             # Send data to DBus
             for i, phase in enumerate(['L1', 'L2', 'L3']):
-                logging.info("Phase %s" % (phase))
                 pre = '/Ac/' + phase
                 emeter = meter_data['emeters'][i]
 
