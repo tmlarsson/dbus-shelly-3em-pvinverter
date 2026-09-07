@@ -1,93 +1,72 @@
 # dbus-shelly-3em-pvinverter
-Integrate Shelly 3em into Victron Energies Venus OS
 
-## Purpose
-With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects the Shelly 3em to the VenusOS and GX devices from Victron.
-Idea is inspired on @fabian-lauer project linked below.
+Publish a Shelly 3EM as a Victron Venus OS PV inverter (`com.victronenergy.pvinverter`).
 
+Use this when the 3EM is clamped on a grid-tied inverter (Growatt, GTIL, etc.) so Venus can show solar on the overview.
 
+## What it does
 
-## Inspiration
-This project is my first on GitHub and with the Victron Venus OS, so I took some ideas and approaches from the following projects - many thanks for sharing the knowledge:
-- https://github.com/fabian-lauer/dbus-shelly-3em-smartmeter
-- https://shelly-api-docs.shelly.cloud/gen1/#shelly1-shelly3em
-- https://github.com/victronenergy/venus/wiki/dbus#pv-inverters
+The driver is a daemontools service. Every `PollIntervalSeconds` (default 2) it GETs `http://<host>/status` and maps `emeters[0..2]` to L1–L3 plus `/Ac/Power` from `total_power`.
 
-## How it works
-### My setup
-- 3-Phase installation
-- Shelly 3em with latest firmware (20220209-094317/v1.11.8-g8c7bb8d)
-  - Measuring AC output of SUN-2000 GTIL on phase L3
-  - Connected to Wifi netowrk "A" with a known IP  
-- Shelly 3em with latest firmware (20220209-094317/v1.11.8-g8c7bb8d)
-  - Measuring AC output of Envertech EVT-500 and Hoymiles HM-800 on phase L3
-  - Connected to Wifi netowrk "A" with a known IP  
-- Shelly 3EM used as a grid meter
-  - Connected over https://github.com/fabian-lauer/dbus-shelly-3em-smartmeter
-  - Connected to Wifi netowrk "A" with a known IP  
-- Venus OS on Raspberry PI 4 4GB version 1.1 - Firmware v2.84
-  - No other devices from Victron connected
-  - Connected to Wifi netowrk "A"
+`/Position` is the Victron PV position: `0` AC-in 1, `1` AC-out, `2` AC-in 2.
 
-### Details / Process
-As mentioned above the script is inspired by @fabian-lauer dbus-shelly-3em-smartmeter implementation.
-So what is the script doing:
-- Running as a service
-- connecting to DBus of the Venus OS `com.victronenergy.pvinverter.http_{DeviceInstanceID_from_config}`
-- After successful DBus connection Shelly 3em is accessed via REST-API - simply the /status is called and a JSON is returned with all details
-  A sample JSON file from Shelly 3em can be found [here](docs/shelly3em-status-sample.json)
-- Serial/MAC is taken from the response as device serial
-- Paths are added to the DBus with default value 0 - including some settings like name, etc
-- After that a "loop" is started which pulls Shelly 3em data every 750ms from the REST-API and updates the values in the DBus
+If the Shelly is unreachable, `/Connected` goes to `0` and live watts go to `0`. Lifetime `/Ac/Energy/Forward` is left alone (VRM must not see yield run backwards). Night-time CT standby (a few negative watts) is clamped to `0` unless `AllowNegativePower=1`.
 
-Thats it 😄
+HTTP basic auth uses an `Authorization` header, not `user:pass@host` in the URL.
 
-### Pictures
-![Tile Overview](img/venus-os-tile-overview.PNG)
-![Remote Console - Overview](img/venus-os-remote-console-overview.PNG) 
-![SmartMeter - Values](img/venus-os-shelly3em-pvinverter.PNG)
-![SmartMeter - Device Details](img/venus-os-shelly3em-pvinverter-devicedetails.PNG)
+## Config
 
+Edit `/data/dbus-shelly-3em-pvinverter/config.ini` on the GX.
 
-## Install & Configuration
-### Get the code
-Just grap a copy of the main branche and copy them to a folder under `/data/` e.g. `/data/dbus-shelly-3em-pvinverter`.
-After that call the install.sh script.
+| Section | Key | Meaning |
+|---|---|---|
+| `DEFAULT` | `Deviceinstance` | Venus instance (`http_41` if 41). Must not collide with other `pvinverter.http_*` drivers. |
+| `DEFAULT` | `CustomName` | Name in Remote Console |
+| `DEFAULT` | `Position` | `0` AC-in 1, `1` AC-out, `2` AC-in 2 |
+| `DEFAULT` | `SignOfLifeLog` | Minutes between info log lines |
+| `DEFAULT` | `PollIntervalSeconds` | How often to poll (default 2, minimum 1). HTTP timeout stays below this. |
+| `DEFAULT` | `AllowNegativePower` | `0` (default) clamps generation at 0 W; `1` publishes CT sign as-is |
+| `ONPREMISE` | `Host` | Shelly 3EM IP/hostname |
+| `ONPREMISE` | `Username` / `Password` | Optional HTTP basic auth |
 
-The following script should do everything for you:
-```
-wget https://github.com/tmlarsson/dbus-shelly-3em-pvinverter/archive/refs/heads/main.zip
-unzip main.zip "dbus-shelly-3em-pvinverter-main/*" -d /data
-mv /data/dbus-shelly-3em-pvinverter-main /data/dbus-shelly-3em-pvinverter
+Older configs had `Phase=L3`. The Python never read that key — all three emeters were always published — so dropping it does not hide or show extra phases.
+
+The sample `Deviceinstance` is `41`. Other community HTTP PV drivers often sit nearby; check existing `com.victronenergy.pvinverter.http_*` names before picking.
+
+## Install
+
+On the GX (root SSH):
+
+```bash
+wget -O /tmp/shelly-3em.zip https://github.com/tmlarsson/dbus-shelly-3em-pvinverter/archive/refs/heads/main.zip
+unzip /tmp/shelly-3em.zip -d /tmp
+# Keep live settings if this is an update
+if [ -f /data/dbus-shelly-3em-pvinverter/config.ini ]; then
+  cp /data/dbus-shelly-3em-pvinverter/config.ini /tmp/shelly-3em-config.ini
+fi
+mkdir -p /data/dbus-shelly-3em-pvinverter
+cp -R /tmp/dbus-shelly-3em-pvinverter-main/. /data/dbus-shelly-3em-pvinverter/
+if [ -f /tmp/shelly-3em-config.ini ]; then
+  cp /tmp/shelly-3em-config.ini /data/dbus-shelly-3em-pvinverter/config.ini
+fi
 chmod a+x /data/dbus-shelly-3em-pvinverter/install.sh
 /data/dbus-shelly-3em-pvinverter/install.sh
-rm main.zip
 ```
-⚠️ Check configuration after that - because service is already installed an running and with wrong connection data (host, username, pwd) you will spam the log-file
 
-### Change config.ini
-Within the project there is a file `/data/dbus-shelly-3em-pvinverter/config.ini` - just change the values - most important is the deviceinstance, custom name and phase under "DEFAULT" and host, username and password in section "ONPREMISE". More details below:
+Edit `config.ini` after a first install, then restart. Updates keep the existing `config.ini`.
 
-| Section  | Config vlaue | Explanation |
-| ------------- | ------------- | ------------- |
-| DEFAULT  | AccessType | Fixed value 'OnPremise' |
-| DEFAULT  | SignOfLifeLog  | Time in minutes how often a status is added to the log-file `current.log` with log-level INFO |
-| DEFAULT  | Deviceinstance | Unique ID identifying the shelly 3em in Venus OS |
-| DEFAULT  | CustomName | Name shown in Remote Console (e.g. name of pv inverter) |
-| DEFAULT  | Phase | Valid values L1, L2 or L3: represents the phase where pv inverter is feeding in |
-| DEFAULT  | Position | Valid values 0, 1 or 2: represents where the inverter is connected (0=AC input 1; 1=AC output; 2=AC input 2) |
-| ONPREMISE  | Host | IP or hostname of on-premise Shelly 3EM web-interface |
-| ONPREMISE  | Username | Username for htaccess login - leave blank if no username/password required |
-| ONPREMISE  | Password | Password for htaccess login - leave blank if no username/password required |
+## Restart / uninstall / logs
 
+```bash
+/data/dbus-shelly-3em-pvinverter/restart.sh
+/data/dbus-shelly-3em-pvinverter/uninstall.sh
+tail -n 100 -f /var/log/dbus-shelly-3em-pvinverter/current | tai64nlocal
+```
 
+On some Venus images `/var/log` is the same as `/data/log`.
 
-## Used documentation
-- https://github.com/victronenergy/venus/wiki/dbus#pv-inverters   DBus paths for Victron namespace
-- https://github.com/victronenergy/venus/wiki/dbus-api   DBus API from Victron
-- https://www.victronenergy.com/live/ccgx:root_access   How to get root access on GX device/Venus OS
-- https://shelly-api-docs.shelly.cloud/gen1/#shelly1-shelly3em Shelly API documentation
+## Docs
 
-## Discussions on the web
-This module/repository has been posted on the following threads:
-- https://community.victronenergy.com/questions/127339/shelly-3em-as-pv-inverter-in-venusos.html
+- [Venus D-Bus PV inverter](https://github.com/victronenergy/venus/wiki/dbus#pv-inverters)
+- [Shelly 3EM status](https://shelly-api-docs.shelly.cloud/gen1/#shelly-3em)
+- [GX root access](https://www.victronenergy.com/live/ccgx:root_access)

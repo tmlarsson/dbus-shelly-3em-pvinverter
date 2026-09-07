@@ -1,5 +1,6 @@
 #!/bin/sh
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
+echo "*** starting dbus-shelly-3em-pvinverter ***"
 exec 2>&1
-python $(realpath $SCRIPT_DIR/../dbus-shelly-3em-pvinverter.py)
+RUNDIR=$(cd "$(dirname "$0")" && pwd -P)
+DIR=$(dirname "$RUNDIR")
+exec python3 -u "$DIR/dbus-shelly-3em-pvinverter.py"
